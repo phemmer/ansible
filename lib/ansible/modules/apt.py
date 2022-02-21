@@ -497,29 +497,25 @@ def package_status(m, pkgname, version_cmp, version, default_release, cache, sta
     except KeyError:
         if state == 'install':
             try:
-                provided_packages = cache.get_providing_packages(pkgname)
-                if provided_packages:
+                providing_packages = cache.get_providing_packages(pkgname)
+                if providing_packages:
                     # When this is a virtual package satisfied by only
                     # one installed package, return the status of the target
                     # package to avoid requesting re-install
-                    if cache.is_virtual_package(pkgname) and len(provided_packages) == 1:
-                        package = provided_packages[0]
-                        installed, installed_version, version_installable, has_files = \
-                            package_status(m, package.name, version_cmp, version, default_release, cache, state='install')
-                        if installed:
-                            return installed, installed_version, version_installable, has_files
+                    if cache.is_virtual_package(pkgname) and len(providing_packages) == 1:
+                        return package_status(m, providing_packages[0].name, version_cmp, version, default_release, cache, state)
 
                     # Otherwise return nothing so apt will sort out
                     # what package to satisfy this with
-                    return False, False, None, False
+                    return pkgname, False, False, None, False
 
                 m.fail_json(msg="No package matching '%s' is available" % pkgname)
             except AttributeError:
                 # python-apt version too old to detect virtual packages
                 # mark as not installed and let apt-get install deal with it
-                return False, False, None, False
+                return pkgname, False, False, None, False
         else:
-            return False, False, False, False
+            return pkgname, False, False, False, False
     try:
         has_files = len(pkg.installed_files) > 0
     except UnicodeDecodeError:
@@ -559,7 +555,7 @@ def package_status(m, pkgname, version_cmp, version, default_release, cache, sta
     else:
         version_installable = version_best
 
-    return package_is_installed, version_is_installed, version_installable, has_files
+    return pkgname, package_is_installed, version_is_installed, version_installable, has_files
 
 
 def expand_dpkg_options(dpkg_options_compressed):
@@ -674,8 +670,8 @@ def install(m, pkgspec, cache, upgrade=False, default_release=None,
             continue
 
         name, version_cmp, version = package_split(package)
+        name, installed, installed_version, version_installable, has_files = package_status(m, name, version_cmp, version, default_release, cache, state='install')
         package_names.append(name)
-        installed, installed_version, version_installable, has_files = package_status(m, name, version_cmp, version, default_release, cache, state='install')
         if (not installed and not only_upgrade) or (installed and not installed_version) or (upgrade and version_installable):
             if version_installable or version:
                 pkg_list.append("'%s=%s'" % (name, version_installable or version))
@@ -887,7 +883,7 @@ def remove(m, pkgspec, cache, purge=False, force=False,
     pkgspec = expand_pkgspec_from_fnmatches(m, pkgspec, cache)
     for package in pkgspec:
         name, version_cmp, version = package_split(package)
-        installed, installed_version, upgradable, has_files = package_status(m, name, version_cmp, version, None, cache, state='remove')
+        name, installed, installed_version, upgradable, has_files = package_status(m, name, version_cmp, version, None, cache, state='remove')
         if installed_version or (has_files and purge):
             pkg_list.append("'%s'" % package)
     packages = ' '.join(pkg_list)
